@@ -155,22 +155,38 @@ export async function generateAndInsertSessions(
 }
 
 export async function getJob(jobId: string): Promise<AnalysisJob | null> {
-  const { data, error } = await supabase
-    .from('analysis_jobs')
-    .select('*')
-    .eq('id', jobId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return data;
+  try {
+    const { data, error } = await supabase
+      .from('analysis_jobs')
+      .select('*')
+      .eq('id', jobId)
+      .maybeSingle();
+    if (error) {
+      console.warn('getJob error:', error.message);
+      return null;
+    }
+    return data;
+  } catch (err) {
+    console.warn('getJob exception:', err);
+    return null;
+  }
 }
 
 export async function getAllJobs(): Promise<AnalysisJob[]> {
-  const { data, error } = await supabase
-    .from('analysis_jobs')
-    .select('*')
-    .order('created_at', { ascending: false });
-  if (error) throw new Error(error.message);
-  return data || [];
+  try {
+    const { data, error } = await supabase
+      .from('analysis_jobs')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.warn('getAllJobs error:', error.message);
+      return [];
+    }
+    return data || [];
+  } catch (err) {
+    console.warn('getAllJobs exception:', err);
+    return [];
+  }
 }
 
 export async function getDashboardStats(): Promise<DashboardStats> {
@@ -258,92 +274,117 @@ export async function getSessions(
     search?: string;
   } = {}
 ): Promise<Session[]> {
-  let query = supabase.from('sessions').select('*');
+  try {
+    let query = supabase.from('sessions').select('*');
 
-  if (filters.jobId) query = query.eq('job_id', filters.jobId);
-  if (filters.protocol && filters.protocol !== 'all') query = query.eq('protocol', filters.protocol);
-  if (filters.riskLevel && filters.riskLevel !== 'all') query = query.eq('risk_level', filters.riskLevel);
-  if (filters.tlsVersion && filters.tlsVersion !== 'all') query = query.eq('tls_version', filters.tlsVersion);
-  if (filters.search) {
-    query = query.or(`src_ip.ilike.%${filters.search}%,dst_ip.ilike.%${filters.search}%`);
+    if (filters.jobId) query = query.eq('job_id', filters.jobId);
+    if (filters.protocol && filters.protocol !== 'all') query = query.eq('protocol', filters.protocol);
+    if (filters.riskLevel && filters.riskLevel !== 'all') query = query.eq('risk_level', filters.riskLevel);
+    if (filters.tlsVersion && filters.tlsVersion !== 'all') query = query.eq('tls_version', filters.tlsVersion);
+    if (filters.search) {
+      query = query.or(`src_ip.ilike.%${filters.search}%,dst_ip.ilike.%${filters.search}%`);
+    }
+
+    query = query.order('risk_level', { ascending: false }).limit(500);
+
+    const { data, error } = await query;
+    if (error) {
+      console.warn('getSessions error:', error.message);
+      return [];
+    }
+    return (data || []) as unknown as Session[];
+  } catch (err) {
+    console.warn('getSessions exception:', err);
+    return [];
   }
-
-  query = query.order('risk_level', { ascending: false }).limit(500);
-
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  return (data || []) as unknown as Session[];
 }
 
 export async function getSessionById(id: string): Promise<Session | null> {
-  const { data: session, error } = await supabase
-    .from('sessions')
-    .select('*')
-    .eq('id', id)
-    .maybeSingle();
+  try {
+    const { data: session, error } = await supabase
+      .from('sessions')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
 
-  if (error) throw new Error(error.message);
-  if (!session) return null;
+    if (error || !session) return null;
 
-  const { data: certs } = await supabase
-    .from('certificates')
-    .select('*')
-    .eq('session_id', id)
-    .order('chain_position', { ascending: true });
+    const { data: certs } = await supabase
+      .from('certificates')
+      .select('*')
+      .eq('session_id', id)
+      .order('chain_position', { ascending: true });
 
-  const { data: findings } = await supabase
-    .from('findings')
-    .select('*')
-    .eq('session_id', id)
-    .order('severity', { ascending: false });
+    const { data: findings } = await supabase
+      .from('findings')
+      .select('*')
+      .eq('session_id', id)
+      .order('severity', { ascending: false });
 
-  return {
-    ...session,
-    certificates: (certs || []) as unknown as Certificate[],
-    findings: (findings || []) as unknown as Finding[],
-  } as unknown as Session;
+    return {
+      ...session,
+      certificates: (certs || []) as unknown as Certificate[],
+      findings: (findings || []) as unknown as Finding[],
+    } as unknown as Session;
+  } catch (err) {
+    console.warn('getSessionById exception:', err);
+    return null;
+  }
 }
 
 export async function getAllCertificates(): Promise<Certificate[]> {
-  const { data, error } = await supabase
-    .from('certificates')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(200);
-  if (error) throw new Error(error.message);
-  return (data || []) as unknown as Certificate[];
+  try {
+    const { data, error } = await supabase
+      .from('certificates')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (error) {
+      console.warn('getAllCertificates error:', error.message);
+      return [];
+    }
+    return (data || []) as unknown as Certificate[];
+  } catch (err) {
+    console.warn('getAllCertificates exception:', err);
+    return [];
+  }
 }
 
 export async function getRecommendations(): Promise<
   { session_id: string; severity: string; title: string; description: string; recommendation: string; protocol: string; src_ip: string; dst_ip: string }[]
 > {
-  const { data: sessions } = await supabase
-    .from('sessions')
-    .select('id, protocol, src_ip, dst_ip, risk_level')
-    .order('risk_level', { ascending: false })
-    .limit(100);
+  try {
+    const { data: sessions } = await supabase
+      .from('sessions')
+      .select('id, protocol, src_ip, dst_ip, risk_level')
+      .order('risk_level', { ascending: false })
+      .limit(100);
 
-  if (!sessions || sessions.length === 0) return [];
+    if (!sessions || sessions.length === 0) return [];
 
-  const sessionIds = sessions.map((s) => s.id);
-  const { data: findings } = await supabase
-    .from('findings')
-    .select('session_id, severity, title, description, recommendation')
-    .in('session_id', sessionIds)
-    .order('severity', { ascending: false });
+    const sessionIds = sessions.map((s) => s.id);
+    const { data: findings } = await supabase
+      .from('findings')
+      .select('session_id, severity, title, description, recommendation')
+      .in('session_id', sessionIds)
+      .order('severity', { ascending: false });
 
-  if (!findings) return [];
+    if (!findings) return [];
 
-  const sessionMap = new Map(sessions.map((s) => [s.id, s]));
-  return findings.map((f) => {
-    const s = sessionMap.get(f.session_id);
-    return {
-      ...f,
-      protocol: s?.protocol || '',
-      src_ip: s?.src_ip || '',
-      dst_ip: s?.dst_ip || '',
-    };
-  });
+    const sessionMap = new Map(sessions.map((s) => [s.id, s]));
+    return findings.map((f) => {
+      const s = sessionMap.get(f.session_id);
+      return {
+        ...f,
+        protocol: s?.protocol || '',
+        src_ip: s?.src_ip || '',
+        dst_ip: s?.dst_ip || '',
+      };
+    });
+  } catch (err) {
+    console.warn('getRecommendations exception:', err);
+    return [];
+  }
 }
 
 export async function deleteJob(jobId: string): Promise<void> {
@@ -351,25 +392,29 @@ export async function deleteJob(jobId: string): Promise<void> {
 }
 
 export async function seedSampleData(): Promise<void> {
-  const jobs = await getAllJobs();
-  if (jobs.length > 0) return;
+  try {
+    const jobs = await getAllJobs();
+    if (jobs.length > 0) return;
 
-  const samples: { filename: string; scenario: SampleScenario; count: number }[] = [
-    { filename: 'gov_mail_smtp_2026.pcap', scenario: 'bad', count: 8 },
-    { filename: 'defense_imap_tls13.pcap', scenario: 'good', count: 6 },
-    { filename: 'embassy_pop3_mixed.pcap', scenario: 'mixed', count: 10 },
-  ];
+    const samples: { filename: string; scenario: SampleScenario; count: number }[] = [
+      { filename: 'gov_mail_smtp_2026.pcap', scenario: 'bad', count: 8 },
+      { filename: 'defense_imap_tls13.pcap', scenario: 'good', count: 6 },
+      { filename: 'embassy_pop3_mixed.pcap', scenario: 'mixed', count: 10 },
+    ];
 
-  for (const sample of samples) {
-    const jobId = await createAnalysisJob({
-      filename: sample.filename,
-      scenario: sample.scenario,
-      sessionCount: sample.count,
-    });
+    for (const sample of samples) {
+      const jobId = await createAnalysisJob({
+        filename: sample.filename,
+        scenario: sample.scenario,
+        sessionCount: sample.count,
+      });
 
-    await updateJobProgress(jobId, 25);
-    await generateAndInsertSessions(jobId, sample.scenario, sample.count);
-    await updateJobProgress(jobId, 75);
-    await completeAnalysisJob(jobId);
+      await updateJobProgress(jobId, 25);
+      await generateAndInsertSessions(jobId, sample.scenario, sample.count);
+      await updateJobProgress(jobId, 75);
+      await completeAnalysisJob(jobId);
+    }
+  } catch (err) {
+    console.warn('seedSampleData encountered an error:', err);
   }
 }
